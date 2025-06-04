@@ -72,15 +72,15 @@ jobs:
             docker pull ${{ secrets.DOCKER_USERNAME }}/crypto-backend:latest
             docker pull ${{ secrets.DOCKER_USERNAME }}/crypto-frontend:latest
 
-            # Ejecutar backend
+            # Ejecutar backend (escuchar en 0.0.0.0)
             docker run -d --name crypto-backend \
               --network crypto-net \
               -p 4000:4000 \
               -e MONGO_URI=mongodb://mongo:27017/cryptodb \
               ${{ secrets.DOCKER_USERNAME }}/crypto-backend:latest
 
-            # Ejecutar frontend
+            # Ejecutar frontend (exponer en puerto 80 para producción)
             docker run -d --name crypto-frontend \
               --network crypto-net \
-              -p 5173:5173 \
+              -p 80:80 \
               ${{ secrets.DOCKER_USERNAME }}/crypto-frontend:latest
