@@ -1,45 +1,72 @@
+name: Build and Deploy to AWS EC2
 
-services:
-  mongo:
-    image: mongo:6
-    container_name: mongo
-    restart: always
-    ports:
-      - "27017:27017"
-    volumes:
-      - mongo-data:/data/db
-    networks:
-      - crypto-net
+on:
+  push:
+    branches:
+      - main   
 
-  crypto-backend:
-    build:
-      context: ./backend
-    container_name: crypto-backend
-    ports:
-      - "4000:4000"
-    environment:
-      - MONGO_URI=mongodb://mongo:27017/cryptodb
-    depends_on:
-      - mongo
-    networks:
-      - crypto-net
-    restart: unless-stopped
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
 
-  crypto-frontend:
-    build:
-      context: ./crypto-frontend
-    container_name: crypto-frontend
-    ports:
-      - "5173:80"
-    depends_on:
-      - crypto-backend
-    networks:
-      - crypto-net
-    restart: unless-stopped
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v3
 
-volumes:
-  mongo-data:
+      - name: Log in to Docker Hub
+        uses: docker/login-action@v2
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
 
-networks:
-  crypto-net:
-    driver: bridge
+      - name: Build and push backend image
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/crypto-backend:latest ./backend
+          docker push ${{ secrets.DOCKER_USERNAME }}/crypto-backend:latest
+
+      - name: Build and push frontend image
+        run: |
+          docker build -t ${{ secrets.DOCKER_USERNAME }}/crypto-frontend:latest ./crypto-frontend
+          docker push ${{ secrets.DOCKER_USERNAME }}/crypto-frontend:latest
+
+      - name: Deploy to EC2
+        uses: appleboy/ssh-action@v0.1.9
+        with:
+          host: ${{ secrets.EC2_HOST }}
+          username: ${{ secrets.EC2_USER }}
+          key: ${{ secrets.EC2_SSH_KEY }}
+          script: |
+            # Crear red docker si no existe
+            if ! docker network ls | grep -q crypto-net; then
+              docker network create crypto-net
+            fi
+
+            # Levantar mongo si no está corriendo
+            if [ "$(docker ps -q -f name=mongo)" == "" ]; then
+              docker run -d --name mongo \
+                --network crypto-net \
+                -p 27017:27017 \
+                -v mongo-data:/data/db \
+                mongo:6
+            fi
+
+            # Parar y eliminar contenedores antiguos
+            docker rm -f crypto-backend || true
+            docker rm -f crypto-frontend || true
+
+            # Descargar imágenes
+            docker pull ${{ secrets.DOCKER_USERNAME }}/crypto-backend:latest
+            docker pull ${{ secrets.DOCKER_USERNAME }}/crypto-frontend:latest
+
+            # Ejecutar backend
+            docker run -d --name crypto-backend \
+              --network crypto-net \
+              -p 4000:4000 \
+              -e MONGO_URI=mongodb://mongo:27017/cryptodb \
+              ${{ secrets.DOCKER_USERNAME }}/crypto-backend:latest
+
+            # Ejecutar frontend
+            docker run -d --name crypto-frontend \
+              --network crypto-net \
+              -p 5173:5173 \
+              ${{ secrets.DOCKER_USERNAME }}/crypto-frontend:latest

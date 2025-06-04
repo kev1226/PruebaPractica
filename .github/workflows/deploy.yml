@@ -1,0 +1,36 @@
+name: Deploy to EC2
+
+on:
+  push:
+    branches:
+      - master  # o main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repo
+      uses: actions/checkout@v3
+
+    - name: Connect to EC2 and deploy
+      uses: appleboy/ssh-action@v1.0.0
+      with:
+        host: ${{ secrets.EC2_HOST }}
+        username: ${{ secrets.EC2_USER }}
+        key: ${{ secrets.EC2_KEY }}
+        script: |
+  cd ~/crypto-app
+  git pull origin master
+  docker pull kalea/crypto-frontend
+  docker pull tusuario/crypto-backend
+
+  docker stop crypto-frontend || true && docker rm crypto-frontend || true
+  docker stop crypto-backend || true && docker rm crypto-backend || true
+  docker stop mongo || true && docker rm mongo || true
+
+  docker network create crypto-net || true
+
+  docker run -d --name mongo --network crypto-net -p 27017:27017 -v mongo-data:/data/db mongo
+  docker run -d --name crypto-backend --network crypto-net -e MONGO_URL="mongodb://mongo:27017/cryptodb" -e PORT=3001 -p 3001:3001 tusuario/crypto-backend
+  docker run -d --name crypto-frontend --network crypto-net -e VITE_API_URL="http://localhost:3001" -p 5173:80 tusuario/crypto-frontend
