@@ -5,7 +5,7 @@ const CryptoList = () => {
   const [cryptos, setCryptos] = useState([]);
 
   useEffect(() => {
-    axios.get("http://localhost:4000/api/cryptos") // Cambia esto si tu backend corre en otro lado
+    axios.get("http://18.208.151.230:4000/api/cryptos") // Cambia esto si tu backend corre en otro lado
       .then(res => setCryptos(res.data))
       .catch(err => console.error("Error fetching cryptos:", err));
   }, []);
