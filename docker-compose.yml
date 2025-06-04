@@ -1,86 +1,48 @@
-name: CI/CD Pipeline
+version: '3.8'
 
-on:
-  push:
-    branches:
-      - main
+services:
+  mongo:
+    image: mongo:6
+    container_name: mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - crypto-net
 
-env:
-  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
-  DOCKER_PASSWORD: ${{ secrets.DOCKER_PASSWORD }}
+  crypto-backend:
+    build:
+      context: ./backend
+    image: kalemat/crypto-backend:latest    # <--- Imagen con tag Docker Hub
+    container_name: crypto-backend
+    ports:
+      - "4000:4000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/cryptodb
+    depends_on:
+      - mongo
+    networks:
+      - crypto-net
+    restart: unless-stopped
 
-jobs:
-  build_and_push:
-    runs-on: ubuntu-latest
+  crypto-frontend:
+    build:
+      context: ./crypto-frontend
+    image: kalemat/crypto-frontend:latest   # <--- Imagen con tag Docker Hub
+    container_name: crypto-frontend
+    ports:
+      - "5173:5173"
+    depends_on:
+      - crypto-backend
+    networks:
+      - crypto-net
+    restart: unless-stopped
 
-    steps:
-      - name: Checkout code
-        uses: actions/checkout@v3
+volumes:
+  mongo-data:
 
-      - name: Set up Docker Buildx
-        uses: docker/setup-buildx-action@v2
-
-      - name: Log in to Docker Hub
-        uses: docker/login-action@v2
-        with:
-          username: ${{ env.DOCKER_USERNAME }}
-          password: ${{ env.DOCKER_PASSWORD }}
-
-      - name: Build and push backend image
-        working-directory: ./backend
-        run: |
-          docker build -t $DOCKER_USERNAME/crypto-backend:latest .
-          docker push $DOCKER_USERNAME/crypto-backend:latest
-
-      - name: Build and push frontend image
-        working-directory: ./crypto-frontend
-        run: |
-          docker build -t $DOCKER_USERNAME/crypto-frontend:latest .
-          docker push $DOCKER_USERNAME/crypto-frontend:latest
-
-  deploy:
-    needs: build_and_push
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Deploy to EC2
-        uses: appleboy/ssh-action@v0.1.9
-        with:
-          host: ${{ secrets.EC2_HOST }}
-          username: ${{ secrets.EC2_USER }}
-          key: ${{ secrets.EC2_SSH_KEY }}
-          script: |
-            # Crear red docker si no existe
-            if ! docker network ls | grep -q crypto-net; then
-              docker network create crypto-net
-            fi
-
-            # Levantar mongo si no está corriendo
-            if [ "$(docker ps -q -f name=mongo)" == "" ]; then
-              docker run -d --name mongo \
-                --network crypto-net \
-                -p 27017:27017 \
-                -v mongo-data:/data/db \
-                mongo:6
-            fi
-
-            # Parar y eliminar contenedores antiguos
-            docker rm -f crypto-backend || true
-            docker rm -f crypto-frontend || true
-
-            # Descargar imágenes más recientes
-            docker pull ${{ secrets.DOCKER_USERNAME }}/crypto-backend:latest
-            docker pull ${{ secrets.DOCKER_USERNAME }}/crypto-frontend:latest
-
-            # Ejecutar backend
-            docker run -d --name crypto-backend \
-              --network crypto-net \
-              -p 4000:4000 \
-              -e MONGO_URI=mongodb://mongo:27017/cryptodb \
-              ${{ secrets.DOCKER_USERNAME }}/crypto-backend:latest
-
-            # Ejecutar frontend
-            docker run -d --name crypto-frontend \
-              --network crypto-net \
-              -p 5173:5173 \
-              ${{ secrets.DOCKER_USERNAME }}/crypto-frontend:latest
+networks:
+  crypto-net:
+    driver: bridge
