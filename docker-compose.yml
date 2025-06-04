@@ -1,0 +1,45 @@
+
+services:
+  mongo:
+    image: mongo:6
+    container_name: mongo
+    restart: always
+    ports:
+      - "27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    networks:
+      - crypto-net
+
+  crypto-backend:
+    build:
+      context: ./backend
+    container_name: crypto-backend
+    ports:
+      - "4000:4000"
+    environment:
+      - MONGO_URI=mongodb://mongo:27017/cryptodb
+    depends_on:
+      - mongo
+    networks:
+      - crypto-net
+    restart: unless-stopped
+
+  crypto-frontend:
+    build:
+      context: ./crypto-frontend
+    container_name: crypto-frontend
+    ports:
+      - "5173:80"
+    depends_on:
+      - crypto-backend
+    networks:
+      - crypto-net
+    restart: unless-stopped
+
+volumes:
+  mongo-data:
+
+networks:
+  crypto-net:
+    driver: bridge
